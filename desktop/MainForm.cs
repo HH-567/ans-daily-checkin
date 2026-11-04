@@ -282,7 +282,7 @@ namespace AnsCheckin
             };
             try
             {
-                string logoPath = Path.Combine(_root, "desktop", "assets", "logo-64.png");
+                string logoPath = Path.Combine(_root, "desktop", "logo-64.png");
                 if (File.Exists(logoPath))
                 {
                     using (var fs = new FileStream(logoPath, FileMode.Open, FileAccess.Read))

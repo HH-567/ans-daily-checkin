@@ -38,8 +38,8 @@ const CONFIG_FILE = path.join(ROOT, "config.json");
 const LOG_DIR = path.join(ROOT, "logs");
 const RUNS_FILE = path.join(LOG_DIR, "runs.jsonl");
 const CHECKIN = path.join(ROOT, "checkin.mjs");
-const GRAB = path.join(ROOT, "tools", "grab-cookie.mjs");
-const SCHEDULE_SCRIPT = path.join(ROOT, "scripts", "set-schedule.ps1");
+const GRAB = path.join(ROOT, "grab-cookie.mjs");
+const SCHEDULE_SCRIPT = path.join(ROOT, "set-schedule.ps1");
 const UI_STATE_FILE = path.join(ROOT, "ui-state.json");
 
 const HOST = "127.0.0.1";
@@ -741,7 +741,7 @@ async function applySchedule(csv) {
     let msg = raw || `更新失败（退出码 ${r.code}）`;
     // 把脚本里的英文错误换成更明确的提示
     if (/Scheduled task not found/i.test(raw)) {
-      msg = "找不到计划任务「ANS每日签到」。请先运行 scripts\\register-task.ps1 创建定时任务，或挂载开机自启。";
+      msg = "找不到计划任务「ANS每日签到」。请先运行 register-task.ps1 创建定时任务，或挂载开机自启。";
     } else if (/Invalid time/i.test(raw)) {
       msg = raw.replace(/Invalid time/i, "时间格式不对");
     } else if (/Access is denied|拒绝访问/i.test(raw)) {

@@ -35,6 +35,4 @@ desktop.ini
 .idea/
 *.swp
 
-# 界面状态缓存与临时调试产物
 desktop-ui.json
-_dlgtest.exe

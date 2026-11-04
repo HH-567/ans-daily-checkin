@@ -1,9 +1,9 @@
 ﻿# 注册 ANS 每日签到 到 Windows 任务计划程序
 #
-#   .\scripts\register-task.ps1                        # 默认每天 12:00 跑一次
-#   .\scripts\register-task.ps1 -Times 09:00           # 换成别的时间
-#   .\scripts\register-task.ps1 -Times 09:00,21:00     # 多个时间点
-#   .\scripts\register-task.ps1 -Unregister            # 删除计划任务
+#   .\register-task.ps1                        # 默认每天 12:00 跑一次
+#   .\register-task.ps1 -Times 09:00           # 换成别的时间
+#   .\register-task.ps1 -Times 09:00,21:00     # 多个时间点
+#   .\register-task.ps1 -Unregister            # 删除计划任务
 #
 # 说明：接口是幂等的——已经领过只会返回 duplicate，不会重复加积分，
 #      所以加多个时间点也不会重复得分。
@@ -17,7 +17,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if ($Unregister) {
     $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -31,11 +31,11 @@ if ($Unregister) {
 }
 
 # 校验前置条件
-$runner = Join-Path $root 'scripts\run-task.ps1'
+$runner = Join-Path $root 'run-task.ps1'
 if (-not (Test-Path $runner)) { throw "缺少 run-task.ps1" }
 if (-not (Test-Path (Join-Path $root 'checkin.mjs'))) { throw "缺少 checkin.mjs" }
 if (-not (Test-Path (Join-Path $root 'session.json'))) {
-    Write-Host '! 尚未导入 Cookie，任务会以"登录失效"退出。请先运行 tools\导入Cookie.bat' -ForegroundColor Yellow
+    Write-Host '! 尚未导入 Cookie，任务会以"登录失效"退出。请先运行 导入Cookie.bat' -ForegroundColor Yellow
 }
 
 $parsedTimes = @()
@@ -85,4 +85,4 @@ Write-Host ''
 Write-Host '可用的验证命令：' -ForegroundColor Cyan
 Write-Host "  Start-ScheduledTask -TaskName '$TaskName'     # 立即触发一次"
 Write-Host "  Get-ScheduledTaskInfo -TaskName '$TaskName'   # 查看上次结果"
-Write-Host "  .\scripts\register-task.ps1 -Unregister               # 删除任务"
+Write-Host "  .\register-task.ps1 -Unregister               # 删除任务"

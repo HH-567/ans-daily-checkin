@@ -5,15 +5,15 @@
  * 把浏览器里已登录的会话 Cookie 保存到 session.json，供 checkin.mjs 复用。
  * 支持三种输入：交互粘贴、命令行参数、文件。
  *
- *   node tools\import-cookie.mjs
- *   node tools\import-cookie.mjs --cookie "authjs.session-token=..."
- *   node tools\import-cookie.mjs --file cookie.txt
+ *   node import-cookie.mjs
+ *   node import-cookie.mjs --cookie "authjs.session-token=..."
+ *   node import-cookie.mjs --file cookie.txt
  */
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { saveAccount, listAccounts } from "../lib/accounts.mjs";
+import { saveAccount, listAccounts } from "./lib/accounts.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const ORIGIN = "https://ans.cauai.fun";
@@ -145,7 +145,7 @@ async function main() {
 
   if (args.help) {
     console.log(`
-用法：node tools\import-cookie.mjs [--cookie "..."] [--file cookie.txt]
+用法：node import-cookie.mjs [--cookie "..."] [--file cookie.txt]
 
 不带参数时进入交互粘贴模式。
 获取 Cookie 的方法见同目录 README.md，最省事的方式是：

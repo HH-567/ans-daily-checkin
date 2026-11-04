@@ -5,15 +5,15 @@
  * 直接走站点的 NextAuth credentials 登录接口，成功后把 Cookie 存进 accounts/。
  * 密码只在内存中使用，不写入磁盘、不出现在命令行参数里。
  *
- *   node tools\login-password.mjs                 # 交互输入（密码不回显）
- *   node tools\login-password.mjs --email a@b.com # 只预填邮箱，密码仍交互输入
+ *   node login-password.mjs                 # 交互输入（密码不回显）
+ *   node login-password.mjs --email a@b.com # 只预填邮箱，密码仍交互输入
  */
 import readline from "node:readline";
-import { loginWithPassword } from "../lib/ans-auth.mjs";
-import { saveAccount, listAccounts } from "../lib/accounts.mjs";
+import { loginWithPassword } from "./lib/ans-auth.mjs";
+import { saveAccount, listAccounts } from "./lib/accounts.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../lib/accounts.mjs";
+import { ROOT } from "./lib/accounts.mjs";
 
 const AUTH_MARKER = path.join(ROOT, "需要重新登录.txt");
 
@@ -83,7 +83,7 @@ async function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(`
-用法：node tools\login-password.mjs [--email 邮箱]
+用法：node login-password.mjs [--email 邮箱]
 
   直接输入账号密码登录，成功后自动保存到 accounts/。
   密码输入时不回显，也不会存到磁盘。

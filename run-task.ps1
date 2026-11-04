@@ -1,4 +1,4 @@
-﻿# ANS 每日签到 · 计划任务执行器
+# ANS 每日签到 · 计划任务执行器
 # 供 Windows 任务计划程序调用：解析 node 路径 → 执行 checkin.mjs → 落盘输出
 # 退出码原样透出，方便任务计划程序记录结果。
 
@@ -10,7 +10,7 @@ try {
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch { }
 
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $root 'logs'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 

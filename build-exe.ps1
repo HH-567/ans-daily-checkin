@@ -1,12 +1,12 @@
 ﻿# 编译桌面客户端 ANS签到.exe
 #
-#   右键「使用 PowerShell 运行」，或在 PowerShell 里执行  .\scripts\build-exe.ps1
+#   右键「使用 PowerShell 运行」，或在 PowerShell 里执行  .\build-exe.ps1
 #
 # 原理：用 Windows 自带的 .NET Framework 编译器（csc.exe）编译，不需要下载
 #       Electron / Tauri 之类的运行时，产物只有几十 KB，双击即用。
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
 $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -17,8 +17,8 @@ if (-not (Test-Path $csc)) {
     throw '找不到 .NET Framework 编译器 csc.exe（Windows 默认自带，可能被精简过）'
 }
 
-$source = Join-Path $root 'desktop\src\Launcher.cs'
-$icon = Join-Path $root 'desktop\assets\app.ico'
+$source = Join-Path $root 'desktop\Launcher.cs'
+$icon = Join-Path $root 'desktop\app.ico'
 $output = Join-Path $root 'ANS签到.exe'
 
 if (-not (Test-Path $source)) { throw "缺少源码：$source" }
@@ -28,7 +28,7 @@ if (-not (Test-Path $icon)) {
     $py = Get-Command python -ErrorAction SilentlyContinue
     if ($py) {
         Write-Host '正在生成图标…'
-        & $py.Source (Join-Path $root 'desktop\src\make_icon.py')
+        & $py.Source (Join-Path $root 'desktop\make_icon.py')
     } else {
         Write-Host '! 未找到 python，跳过图标生成（exe 将使用默认图标）' -ForegroundColor Yellow
     }
@@ -44,12 +44,12 @@ $refs = @(
 )
 
 $sources = @(
-    (Join-Path $root 'desktop\src\Launcher.cs'),
-    (Join-Path $root 'desktop\src\MainForm.cs'),
-    (Join-Path $root 'desktop\src\AddAccountForm.cs')
+    (Join-Path $root 'desktop\Launcher.cs'),
+    (Join-Path $root 'desktop\MainForm.cs'),
+    (Join-Path $root 'desktop\AddAccountForm.cs')
 )
 
-$manifest = Join-Path $root 'desktop\src\app.manifest'
+$manifest = Join-Path $root 'desktop\app.manifest'
 
 $buildArgs = @(
     '/nologo',

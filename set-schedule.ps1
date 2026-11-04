@@ -1,4 +1,4 @@
-﻿# Update the daily trigger times of the "ANS Daily Check-in" scheduled task.
+# Update the daily trigger times of the "ANS Daily Check-in" scheduled task.
 #
 #   .\set-schedule.ps1 -Times "00:10,09:00,16:30"
 #
