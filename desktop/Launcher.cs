@@ -71,6 +71,18 @@ namespace AnsCheckin
             _root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
             _autoMode = args.Length > 0 && args[0].Equals("auto", StringComparison.OrdinalIgnoreCase);
 
+            // 不允许以管理员权限运行：提权进程启动的 Edge 也是提权的，
+            // 之后用户用普通权限打开 Edge 会弹"现有实例正在以提升的权限运行"，点"是"就把浏览器重启了。
+            if (IsElevated() && Environment.GetEnvironmentVariable("ANS_ALLOW_ELEVATED") != "1")
+            {
+                Log("检测到以管理员权限运行，改为普通权限重启");
+                if (RelaunchAsNormal())
+                {
+                    return;
+                }
+                Log("降权重启失败，继续以当前权限运行（建议手动以普通权限启动）");
+            }
+
             try
             {
                 Run(args);
@@ -81,6 +93,49 @@ namespace AnsCheckin
                 MessageBox.Show(
                     "启动失败：\n\n" + ex.Message + "\n\n详情见 logs\\launcher.log",
                     TaskTrayTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static bool IsElevated()
+        {
+            try
+            {
+                using (var id = System.Security.Principal.WindowsIdentity.GetCurrent())
+                {
+                    var principal = new System.Security.Principal.WindowsPrincipal(id);
+                    return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 通过 explorer.exe 重新启动自己 —— 外壳进程是普通权限，
+        /// 由它拉起的进程也会是普通权限，从而把提权状态"降"下来。
+        /// </summary>
+        private static bool RelaunchAsNormal()
+        {
+            try
+            {
+                string exe = Application.ExecutablePath;
+                // 只传非切换类参数，避免降权重启后又去切换开机自启
+                string extra = _autoMode ? "auto" : "";
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = string.IsNullOrEmpty(extra) ? "\"" + exe + "\"" : "\"" + exe + "\" " + extra,
+                    UseShellExecute = true,
+                };
+                Process.Start(psi);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("降权重启异常：" + ex.Message);
+                return false;
             }
         }
 
@@ -100,6 +155,14 @@ namespace AnsCheckin
                     Environment.ExitCode = ok ? 0 : 1;
                     return;
                 }
+
+                // 立即跑一次签到（供脚本/计划任务调用，不需要开界面）
+                if (a0 == "checkin-once")
+                {
+                    Log("命令行触发一次签到");
+                    RunCheckin();
+                    return;
+                }
             }
 
             bool createdNew;
@@ -107,8 +170,9 @@ namespace AnsCheckin
             {
                 if (!createdNew)
                 {
-                    Log("已有实例在运行，唤起界面后退出");
-                    OpenConsole();
+                    // 已有实例：通过命名事件让它把窗口显示出来，然后本进程退出
+                    Log("已有实例在运行，请求它显示窗口");
+                    SignalShowExisting();
                     return;
                 }
 
@@ -140,14 +204,111 @@ namespace AnsCheckin
                 StartWatcher();
                 Log("托盘已就绪");
 
-                // 浏览器统一由服务端打开并校验页面是否真的渲染（见 OpenConsole）。
-                // 放到后台线程，避免等待期间托盘/窗口没响应。
-                if (!_autoMode) ThreadPool.QueueUserWorkItem(_ => OpenConsole());
+                _form = new MainForm(_port, _root);
+                StartShowListener();
+                StartShowPoll();
+
+                if (!_autoMode)
+                {
+                    ShowConsole();
+                }
+                else
+                {
+                    // 开机自启时顺手补一次签到：开机往往就是"今天第一次打开电脑"，
+                    // 这时候签到最容易被忘掉。
+                    MaybeAutoCheckinOnBoot();
+                }
 
                 Application.ApplicationExit += (s, e) => StopServer();
                 Log("进入消息循环");
                 Application.Run();
                 Log("退出");
+            }
+        }
+
+        // ---------------------------------------------------------------- 原生控制台窗口
+
+        private static MainForm _form;
+        private static EventWaitHandle _showEvent;
+        private static System.Windows.Forms.Timer _showPoll;
+        private static volatile bool _showRequested;
+
+        /// <summary>显示（或唤回）原生控制台窗口</summary>
+        private static void ShowConsole()
+        {
+            try
+            {
+                if (_form == null || _form.IsDisposed) _form = new MainForm(_port, _root);
+                _form.Show();
+                if (_form.WindowState == FormWindowState.Minimized) _form.WindowState = FormWindowState.Normal;
+                _form.Activate();
+                Log("显示控制台窗口");
+            }
+            catch (Exception ex)
+            {
+                Log("显示窗口失败：" + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 监听"显示窗口"信号。重复双击 exe 时，第二个进程不占单实例锁，
+        /// 而是发一个命名事件，让已在运行的实例把窗口叫到前面。
+        /// </summary>
+        private static void StartShowListener()
+        {
+            try
+            {
+                _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "AnsCheckinShow");
+                var thread = new Thread(() =>
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            if (!_showEvent.WaitOne()) continue;
+                            _showRequested = true;
+                        }
+                        catch
+                        {
+                            return;
+                        }
+                    }
+                });
+                thread.IsBackground = true;
+                thread.Start();
+            }
+            catch (Exception ex)
+            {
+                Log("启动显示监听失败：" + ex.Message);
+            }
+        }
+
+        private static void StartShowPoll()
+        {
+            _showPoll = new System.Windows.Forms.Timer { Interval = 250 };
+            _showPoll.Tick += (s, e) =>
+            {
+                if (!_showRequested) return;
+                _showRequested = false;
+                ShowConsole();
+            };
+            _showPoll.Start();
+        }
+
+        private static void SignalShowExisting()
+        {
+            try
+            {
+                EventWaitHandle ev;
+                if (EventWaitHandle.TryOpenExisting("AnsCheckinShow", out ev))
+                {
+                    ev.Set();
+                    Log("已通知已有实例显示窗口");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("通知已有实例失败：" + ex.Message);
             }
         }
 
@@ -344,6 +505,82 @@ namespace AnsCheckin
             }
         }
 
+        // ---------------------------------------------------------------- 开机自动签到
+
+        /// <summary>
+        /// 开机自启时补一次签到。
+        ///
+        /// 两个保护：
+        /// 1) 最近 6 小时内已经执行过就跳过 —— 一天里可能会登录多次，没必要每次都跑；
+        /// 2) 延迟 25 秒再跑 —— 刚开机时网络和 DNS 往往还没就绪。
+        /// 计划任务（00:10 / 09:00 / 16:30）照常独立运行，两边都执行也不会重复加分（接口幂等）。
+        /// </summary>
+        private static void MaybeAutoCheckinOnBoot()
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    DateTime? last = LastRunAt();
+                    if (last.HasValue)
+                    {
+                        double hours = (DateTime.Now - last.Value).TotalHours;
+                        if (hours >= 0 && hours < 6)
+                        {
+                            Log("开机自启：" + hours.ToString("F1") + " 小时前刚执行过，跳过自动签到");
+                            return;
+                        }
+                    }
+
+                    Log("开机自启：等待 25 秒让网络就绪");
+                    Thread.Sleep(25000);
+
+                    Log("开机自启：开始自动签到");
+                    RunCheckin();
+                }
+                catch (Exception ex)
+                {
+                    Log("开机自启自动签到异常：" + ex.Message);
+                }
+            });
+        }
+
+        /// <summary>读 runs.jsonl 最后一条记录的 at 时间</summary>
+        private static DateTime? LastRunAt()
+        {
+            try
+            {
+                string file = Path.Combine(_root, "logs", "runs.jsonl");
+                if (!File.Exists(file)) return null;
+
+                string[] lines = File.ReadAllLines(file);
+                for (int i = lines.Length - 1; i >= 0; i--)
+                {
+                    string line = lines[i].Trim();
+                    if (line.Length == 0) continue;
+
+                    int at = line.IndexOf("\"at\":\"", StringComparison.Ordinal);
+                    if (at < 0) continue;
+                    at += 6;
+                    int end = line.IndexOf('"', at);
+                    if (end < 0) continue;
+
+                    string iso = line.Substring(at, end - at);
+                    DateTime dt;
+                    if (DateTime.TryParse(
+                            iso,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.RoundtripKind,
+                            out dt))
+                    {
+                        return dt.ToLocalTime();
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         // ---------------------------------------------------------------- 托盘
 
         private static void BuildTray()
@@ -365,7 +602,7 @@ namespace AnsCheckin
 
             var open = new ToolStripMenuItem("打开控制台");
             open.Font = new Font(open.Font, FontStyle.Bold);
-            open.Click += (s, e) => OpenConsole();
+            open.Click += (s, e) => ShowConsole();
 
             var run = new ToolStripMenuItem("立即签到");
             run.Click += (s, e) => RunCheckin();
@@ -402,7 +639,7 @@ namespace AnsCheckin
             menu.Items.Add(quit);
 
             _tray.ContextMenuStrip = menu;
-            _tray.DoubleClick += (s, e) => OpenConsole();
+            _tray.DoubleClick += (s, e) => ShowConsole();
         }
 
         private static void Notify(string title, string text, ToolTipIcon icon)

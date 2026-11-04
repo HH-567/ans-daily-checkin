@@ -39,6 +39,7 @@ const LOG_DIR = path.join(ROOT, "logs");
 const RUNS_FILE = path.join(LOG_DIR, "runs.jsonl");
 const CHECKIN = path.join(ROOT, "checkin.mjs");
 const GRAB = path.join(ROOT, "grab-cookie.mjs");
+const SCHEDULE_SCRIPT = path.join(ROOT, "set-schedule.ps1");
 const UI_STATE_FILE = path.join(ROOT, "ui-state.json");
 
 const HOST = "127.0.0.1";
@@ -58,7 +59,7 @@ const DEFAULT_CONFIG = {
   timeoutMs: 20000,
   webhook: "",
   port: DEFAULT_PORT,
-  schedule: ["00:10", "09:00", "16:30"],
+  schedule: ["12:00"],
 };
 
 // ------------------------------------------------------------------ 工具
@@ -489,8 +490,10 @@ async function openBrowser(target) {
       return attempts;
     }
 
-    // 只关掉"这次刚拉起来的那个白屏实例"，绝不碰用户其他窗口
-    await closePidTree(result.pid);
+    // 白屏时不再 kill 任何进程：Edge 有时会把"独立配置目录"的启动路由到已有的
+    // 浏览器进程，强杀进程树有连带关掉用户正常浏览器的风险。
+    // 留一个空窗口无害，用户自己关掉即可。
+    openLog(`${label} 未渲染出页面，保留该窗口，改用下一种方式`);
     await sleep(600);
   }
 
@@ -506,23 +509,6 @@ function pidAlive(pid) {
   } catch {
     return false;
   }
-}
-
-/** 只杀指定 pid 及其子进程，用于清理刚启动却白屏的那个窗口 */
-function closePidTree(pid) {
-  return new Promise((resolve) => {
-    if (!pid) return resolve();
-    try {
-      const p = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      p.on("exit", () => resolve());
-      p.on("error", () => resolve());
-    } catch {
-      resolve();
-    }
-  });
 }
 
 /** 记住上次成功打开界面的方式，下次直接用它 */
@@ -617,6 +603,159 @@ function waitForHello(token, timeoutMs) {
     }
     return false;
   })();
+}
+
+// ------------------------------------------------------------------ 自动任务时间（计划任务）
+
+let taskInfoCache = { at: 0, value: null };
+const TASK_INFO_TTL = 30000;
+
+const TASK_NAME = "ANS每日签到";
+
+function runPowerShell(scriptPath, args, timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args],
+        { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+      );
+    } catch (err) {
+      return resolve({ ok: false, error: err?.message || String(err) });
+    }
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* ignore */
+      }
+      resolve({ ok: false, error: "执行超时" });
+    }, timeoutMs);
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: err?.message || String(err) });
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, code, stdout: stdout.trim(), stderr: stderr.trim() });
+    });
+  });
+}
+
+/**
+ * 查询计划任务状态：用 schtasks 导出 XML 再解析。
+ * 不用 PowerShell 是因为它的输出与系统语言相关，且在受限环境里更容易失败；
+ * XML 里的 StartBoundary 是标准格式，跨语言稳定。
+ */
+async function readTaskInfo(force = false) {
+  if (!force && taskInfoCache.value && Date.now() - taskInfoCache.at < TASK_INFO_TTL) {
+    return taskInfoCache.value;
+  }
+
+  const value = await new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn("schtasks.exe", ["/query", "/tn", TASK_NAME, "/xml"], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch (err) {
+      return resolve({ exists: false, error: err?.message || String(err) });
+    }
+
+    let out = "";
+    let errOut = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (errOut += d));
+
+    child.on("error", (e) => resolve({ exists: false, error: e?.message || String(e) }));
+    child.on("close", (code) => {
+      if (code !== 0 || !out.includes("<Task")) {
+        return resolve({
+          exists: false,
+          error: (errOut || out).trim().slice(0, 200) || `schtasks 退出码 ${code}`,
+        });
+      }
+
+      const times = [];
+      const re = /<StartBoundary>([^<]+)<\/StartBoundary>/g;
+      let m;
+      while ((m = re.exec(out))) {
+        const t = String(m[1]).match(/T(\d{2}):(\d{2})/);
+        if (t && !times.includes(`${t[1]}:${t[2]}`)) times.push(`${t[1]}:${t[2]}`);
+      }
+      times.sort();
+
+      const enabled = !/<Enabled>false<\/Enabled>/i.test(out);
+      resolve({ exists: true, state: enabled ? "Ready" : "Disabled", times, next: nextRunOf(times) });
+    });
+  });
+
+  taskInfoCache = { at: Date.now(), value };
+  return value;
+}
+
+/** 由时间列表算下次运行时间（本地时间字符串） */
+function nextRunOf(times) {
+  if (!times || !times.length) return "";
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+
+  const today = times
+    .map((t) => {
+      const [h, mi] = t.split(":").map(Number);
+      const d = new Date(now);
+      d.setHours(h, mi, 0, 0);
+      return d;
+    })
+    .sort((a, b) => a - b);
+
+  const upcoming = today.find((d) => d > now);
+  if (upcoming) return fmt(upcoming);
+
+  const tomorrow = new Date(today[0]);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return fmt(tomorrow);
+}
+
+/** 用 set-schedule.ps1 更新计划任务时间 */
+async function applySchedule(csv) {
+  const r = await runPowerShell(SCHEDULE_SCRIPT, ["-Times", csv], 30000);
+  if (!r.ok) {
+    const raw = r.stderr || r.error || "";
+    let msg = raw || `更新失败（退出码 ${r.code}）`;
+    // 把脚本里的英文错误换成更明确的提示
+    if (/Scheduled task not found/i.test(raw)) {
+      msg = "找不到计划任务「ANS每日签到」。请先运行 register-task.ps1 创建定时任务，或挂载开机自启。";
+    } else if (/Invalid time/i.test(raw)) {
+      msg = raw.replace(/Invalid time/i, "时间格式不对");
+    } else if (/Access is denied|拒绝访问/i.test(raw)) {
+      msg = "没有权限修改计划任务（" + raw + "）";
+    }
+    return { ok: false, error: msg };
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(r.stdout.split(/\r?\n/).filter(Boolean).pop() || "{}");
+  } catch {
+    parsed = null;
+  }
+  return { ok: true, next: parsed?.next || "", times: parsed?.times || [] };
 }
 
 // ------------------------------------------------------------------ 运行
@@ -933,6 +1072,75 @@ async function handle(req, res) {
 
   if (pathname === "/api/accounts" && method === "GET") {
     return json(res, 200, { accounts: listAccounts().map((a) => ({ ...a, cookie: undefined })) });
+  }
+
+  // 异步触发：立刻返回，不等待执行完成（原生窗口用这个，避免界面卡住）
+  if (pathname === "/api/run/async" && method === "POST") {
+    if (running) return json(res, 409, { error: "已有任务在执行中" });
+
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req)) || {};
+    } catch {
+      body = {};
+    }
+
+    const args = [CHECKIN];
+    if (body.account) args.push("--account", String(body.account));
+
+    try {
+      running = true;
+      const child = spawn(process.execPath, args, {
+        cwd: ROOT,
+        env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      child.on("close", () => {
+        running = false;
+        sessionCache.clear();
+      });
+      child.on("error", () => {
+        running = false;
+      });
+      console.log("[console] 已异步触发签到");
+      return json(res, 202, { ok: true });
+    } catch (err) {
+      running = false;
+      return json(res, 500, { error: `无法启动签到进程：${err.message}` });
+    }
+  }
+
+  // 自动任务时间：读取 / 修改 Windows 计划任务的触发时间
+  if (pathname === "/api/schedule" && method === "GET") {
+    return json(res, 200, { times: loadConfig().schedule || [], task: await readTaskInfo() });
+  }
+
+  if (pathname === "/api/schedule" && method === "POST") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return json(res, 400, { error: "请求体不是合法 JSON" });
+    }
+
+    const raw = Array.isArray(body.times) ? body.times : [];
+    const cleaned = [...new Set(raw.map((t) => String(t).trim()).filter((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)))].sort();
+    if (cleaned.length === 0) return json(res, 400, { error: "至少保留一个执行时间" });
+    if (cleaned.length > 8) return json(res, 400, { error: "最多支持 8 个执行时间" });
+
+    const result = await applySchedule(cleaned.join(","));
+    if (!result.ok) {
+      return json(res, 500, { error: result.error || "更新计划任务失败" });
+    }
+
+    const cfg = loadConfig();
+    cfg.schedule = cleaned;
+    writeJson(CONFIG_FILE, cfg);
+    taskInfoCache = { at: 0, value: null };
+
+    console.log("[console] 自动任务时间已更新：", cleaned.join(" / "));
+    return json(res, 200, { ok: true, times: cleaned, next: result.next, task: await readTaskInfo(true) });
   }
 
   if (pathname === "/api/config" && method === "POST") {

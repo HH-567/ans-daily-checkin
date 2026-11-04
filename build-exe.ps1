@@ -1,4 +1,4 @@
-# 编译桌面客户端 ANS签到.exe
+﻿# 编译桌面客户端 ANS签到.exe
 #
 #   右键「使用 PowerShell 运行」，或在 PowerShell 里执行  .\build-exe.ps1
 #
@@ -39,22 +39,32 @@ $refs = @(
     '/r:System.Core.dll',
     '/r:System.Windows.Forms.dll',
     '/r:System.Drawing.dll',
+    '/r:System.Web.Extensions.dll',
     '/r:Microsoft.CSharp.dll'
 )
 
-$args = @(
+$sources = @(
+    (Join-Path $root 'desktop\Launcher.cs'),
+    (Join-Path $root 'desktop\MainForm.cs'),
+    (Join-Path $root 'desktop\AddAccountForm.cs')
+)
+
+$manifest = Join-Path $root 'desktop\app.manifest'
+
+$buildArgs = @(
     '/nologo',
     '/target:winexe',
     '/optimize+',
     '/platform:anycpu',
     "/out:$output",
     $refs
-) + @($source)
+) + $sources
 
-if (Test-Path $icon) { $args = @('/win32icon:' + $icon) + $args }
+if (Test-Path $manifest) { $buildArgs = @('/win32manifest:' + $manifest) + $buildArgs }
+if (Test-Path $icon) { $buildArgs = @('/win32icon:' + $icon) + $buildArgs }
 
 Write-Host '正在编译…'
-$out = & $csc @args 2>&1
+$out = & $csc @buildArgs 2>&1
 $code = $LASTEXITCODE
 
 if ($out) { $out | ForEach-Object { Write-Host $_ } }

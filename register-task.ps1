@@ -1,18 +1,17 @@
-# 注册 ANS 每日签到 到 Windows 任务计划程序
+﻿# 注册 ANS 每日签到 到 Windows 任务计划程序
 #
-#   .\register-task.ps1                        # 默认 00:10 / 09:00 / 16:30 各跑一次
-#   .\register-task.ps1 -Times 09:00           # 只保留一个时间点
+#   .\register-task.ps1                        # 默认每天 12:00 跑一次
+#   .\register-task.ps1 -Times 09:00           # 换成别的时间
+#   .\register-task.ps1 -Times 09:00,21:00     # 多个时间点
 #   .\register-task.ps1 -Unregister            # 删除计划任务
 #
-# 为什么要跑多次：站点的每日重置时刻不确定（实测 00:10 时仍判为"当日已领"），
-#   而接口是幂等的——已经领过只会返回 duplicate，不会重复加积分。
-#   多点触发可以覆盖各种重置时刻，成本几乎为零。
-#
-# 说明：任务以"仅在用户登录时运行"注册，不需要输入 Windows 密码。
+# 说明：接口是幂等的——已经领过只会返回 duplicate，不会重复加积分，
+#      所以加多个时间点也不会重复得分。
+#      任务以"仅在用户登录时运行"注册，不需要输入 Windows 密码；
 #      若当天错过了触发时间，会在下次开机/登录后尽快补跑。
 
 param(
-    [string[]]$Times = @('00:10', '09:00', '16:30'),
+    [string[]]$Times = @('12:00'),
     [string]$TaskName = 'ANS每日签到',
     [switch]$Unregister
 )

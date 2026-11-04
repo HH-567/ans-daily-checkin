@@ -142,6 +142,27 @@
   }
   h2 .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
+  /* 可折叠卡片 */
+  .card[data-collapse] > h2.collapsible { cursor: pointer; user-select: none; }
+  .card[data-collapse] > h2.collapsible .chev {
+    margin-left: auto; flex: none;
+    width: 30px; height: 30px; display: grid; place-items: center;
+    font-size: 15px; font-weight: 700; line-height: 1;
+    color: var(--ink-2);
+    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 9px;
+    transition: transform .18s ease, background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .card[data-collapse] > h2.collapsible .right + .chev { margin-left: 10px; }
+  .card[data-collapse] > h2.collapsible:hover .chev {
+    color: var(--brand);
+    background: var(--brand-soft);
+    border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  }
+  .card.collapsed > h2.collapsible .chev { transform: rotate(-90deg); }
+  .card.collapsed > :not(h2) { display: none !important; }
+  .card.collapsed > h2 { margin-bottom: 0; }
+  .card.collapsed { padding-top: 14px; padding-bottom: 14px; }
+
   /* ---------------- 按钮 ---------------- */
   .actions { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
   button {
@@ -306,6 +327,26 @@
   .footrow { display: flex; gap: 9px; justify-content: flex-end; margin-top: 10px; }
 
   .empty-accounts { text-align: center; padding: 30px 14px; color: var(--ink-3); font-size: 13px; line-height: 1.8; }
+
+  /* 自动任务时间 */
+  .times { display: flex; flex-wrap: wrap; gap: 8px; min-height: 34px; }
+  .time-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 8px 6px 12px; border-radius: 10px;
+    border: 1px solid var(--line-strong); background: var(--surface-2);
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+  }
+  .time-chip button {
+    border: none; background: transparent; color: var(--ink-3);
+    padding: 0 2px; font-size: 15px; line-height: 1; border-radius: 6px;
+  }
+  .time-chip button:hover:not(:disabled) { color: var(--bad); background: transparent; }
+  .times .none { color: var(--ink-3); font-size: 13px; align-self: center; }
+  input[type="time"] {
+    font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 10px;
+    border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink);
+    font-family: var(--mono);
+  }
 </style>
 </head>
 <body>
@@ -361,7 +402,7 @@
   </div>
 
   <div class="grid main" style="margin-bottom:16px">
-    <div class="card">
+    <div class="card" data-collapse="logs">
       <h2>执行日志 <span class="tag" id="logTag">今天</span></h2>
       <div class="logbox" id="logbox"><span class="empty">等待执行…</span></div>
       <div class="actions" style="margin-top:14px">
@@ -370,7 +411,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-collapse="chart">
       <h2>
         积分历史
         <span class="right"><select id="chartAcc"></select></span>
@@ -381,7 +422,7 @@
   </div>
 
   <div class="grid main">
-    <div class="card">
+    <div class="card" data-collapse="quests">
       <h2>自动领取的任务</h2>
       <div class="quests" id="quests"></div>
       <div class="actions" style="margin-top:14px">
@@ -390,12 +431,27 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-collapse="runs">
       <h2>最近执行记录</h2>
       <table>
         <thead><tr><th>时间</th><th>账号</th><th class="num">领取</th><th>结果</th></tr></thead>
         <tbody id="runsTable"><tr><td colspan="4" style="color:var(--ink-3);padding:20px 7px">暂无记录</td></tr></tbody>
       </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>
+      自动任务时间
+      <span class="tag" id="taskTag">读取中…</span>
+      <span class="right"><span class="hint-small" id="taskNext"></span></span>
+    </h2>
+    <div class="times" id="timeChips"></div>
+    <div class="actions" style="margin-top:14px">
+      <input type="time" id="newTime" step="60" />
+      <button id="btnAddTime">添加时间</button>
+      <button class="primary" id="btnSaveTimes">保存并更新计划任务</button>
+      <span class="hint-small" id="timeHint"></span>
     </div>
   </div>
 
@@ -541,6 +597,7 @@ function renderStatus(s) {
   renderQuests(s);
   renderChart(s);
   renderRuns(s);
+  initTimesFromConfig(s);
 }
 
 function renderAccounts(s) {
@@ -705,6 +762,110 @@ function renderRuns(s) {
       <td>${res}</td>
     </tr>`;
   }).join("");
+}
+
+// ---------------- 自动任务时间 ----------------
+let pendingTimes = [];
+let scheduleDirty = false;
+let taskInfo = null;
+
+function renderTimeChips() {
+  const box = $("timeChips");
+  if (!pendingTimes.length) {
+    box.innerHTML = `<span class="none">还没有设置时间</span>`;
+    return;
+  }
+  box.innerHTML = pendingTimes
+    .map((t) => `<span class="time-chip">${t}<button data-time="${t}" title="移除">×</button></span>`)
+    .join("");
+  box.querySelectorAll("button[data-time]").forEach((b) => {
+    b.addEventListener("click", () => {
+      pendingTimes = pendingTimes.filter((x) => x !== b.dataset.time);
+      scheduleDirty = true;
+      renderTimeChips();
+    });
+  });
+}
+
+function initTimesFromConfig(s) {
+  if (scheduleDirty) return;
+  const times = (s.config?.schedule || []).slice().sort();
+  if (JSON.stringify(times) === JSON.stringify(pendingTimes)) return;
+  pendingTimes = times;
+  renderTimeChips();
+}
+
+async function loadTaskInfo() {
+  try {
+    const r = await fetch("/api/schedule", { cache: "no-store" });
+    const j = await r.json();
+    taskInfo = j.task || { exists: false };
+  } catch (e) {
+    taskInfo = { exists: false };
+  }
+  const tag = $("taskTag");
+  if (taskInfo.exists) {
+    tag.textContent = taskInfo.state === "Ready" ? "已启用" : taskInfo.state || "已创建";
+    $("taskNext").textContent = taskInfo.next ? `下次运行 ${taskInfo.next}` : "";
+  } else if (taskInfo.error) {
+    // 查不到不等于没有：权限或环境问题也要如实说明
+    tag.textContent = "状态未知";
+    $("taskNext").textContent = "无法读取计划任务状态";
+    $("taskNext").title = taskInfo.error;
+  } else {
+    tag.textContent = "未创建";
+    $("taskNext").textContent = "";
+  }
+}
+
+function addTime() {
+  const v = $("newTime").value;
+  if (!/^\d{2}:\d{2}$/.test(v)) {
+    toast("请先选择时间", "bad");
+    return;
+  }
+  if (pendingTimes.includes(v)) {
+    toast("这个时间已经有了", "bad");
+    return;
+  }
+  pendingTimes = [...pendingTimes, v].sort();
+  scheduleDirty = true;
+  renderTimeChips();
+  $("newTime").value = "";
+}
+
+async function saveTimes() {
+  if (!pendingTimes.length) {
+    toast("至少保留一个时间", "bad");
+    return;
+  }
+  const btn = $("btnSaveTimes");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  $("timeHint").textContent = "";
+  try {
+    const r = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ times: pendingTimes }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "保存失败");
+    pendingTimes = j.times || pendingTimes;
+    scheduleDirty = false;
+    renderTimeChips();
+    await loadTaskInfo();
+    $("timeHint").textContent = j.next ? `已更新，下次运行 ${j.next}` : "已更新";
+    toast("自动任务时间已更新", "ok");
+    await refresh();
+  } catch (e) {
+    $("timeHint").textContent = "";
+    toast(e.message, "bad");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 function appendLog(text, cls) {
@@ -954,12 +1115,81 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ---------------- 卡片折叠 ----------------
+const COLLAPSE_KEY = "ans-ui-collapsed";
+
+function loadCollapse() {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}") || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveCollapse(map) {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, JSON.stringify(map));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function initCollapsibleCards() {
+  const saved = loadCollapse();
+  document.querySelectorAll(".card[data-collapse]").forEach((card) => {
+    const key = card.dataset.collapse;
+    const h2 = card.querySelector("h2");
+    if (!key || !h2 || h2.querySelector(".chev")) return;
+
+    h2.classList.add("collapsible");
+    h2.setAttribute("role", "button");
+    h2.tabIndex = 0;
+
+    const chev = document.createElement("span");
+    chev.className = "chev";
+    chev.textContent = "▾";
+    chev.title = "展开 / 折叠";
+    h2.appendChild(chev);
+
+    // 默认折叠：没有记录过用户选择时，先收起，让首屏更紧凑
+    const collapsed = saved[key] !== undefined ? !!saved[key] : true;
+    if (collapsed) card.classList.add("collapsed");
+
+    const toggle = () => {
+      card.classList.toggle("collapsed");
+      const map = loadCollapse();
+      // 显式记录 true / false，这样"展开过"不会被当成"没设置"而回到默认折叠
+      map[key] = card.classList.contains("collapsed");
+      saveCollapse(map);
+    };
+
+    h2.addEventListener("click", (e) => {
+      // 标题栏里如果有按钮/下拉，别误触发折叠
+      if (e.target.closest("button, select, input, a")) return;
+      toggle();
+    });
+    h2.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
+}
+
+initCollapsibleCards();
+
 // ---------------- 事件绑定 ----------------
 $("btnRunAll").addEventListener("click", () => runNow(""));
 $("btnAdd").addEventListener("click", openModal);
 $("btnSave").addEventListener("click", saveConfig);
 $("btnRefresh").addEventListener("click", refresh);
 $("btnExport").addEventListener("click", () => { location.href = "/api/export"; });
+$("btnAddTime").addEventListener("click", addTime);
+$("btnSaveTimes").addEventListener("click", saveTimes);
+$("newTime").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") addTime();
+});
 $("chartAcc").addEventListener("change", (e) => {
   chartAccount = e.target.value;
   if (state) renderChart(state);
@@ -990,6 +1220,7 @@ async function saveConfig() {
 }
 
 refresh();
+loadTaskInfo();
 setInterval(refresh, 15000);
 
 try {
