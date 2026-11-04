@@ -1,0 +1,36 @@
+# ---- 凭证与运行态（绝不要提交）----
+accounts/
+session.json
+session.json.migrated
+需要重新登录.txt
+ui-state.json
+.console-port
+
+# 浏览器配置（含登录态）
+browser-profile/
+browser-profile-app/
+browser-profile-ui/
+
+# 日志
+logs/
+
+# 依赖
+node_modules/
+.npm-cache/
+package-lock.json
+
+# 构建产物
+ANS签到.exe
+*.exe
+*.pdb
+
+# 本地配置
+config.json
+
+# 系统与编辑器
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.swp

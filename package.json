@@ -1,0 +1,10 @@
+{
+  "name": "ans-daily-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ANS 工作台每日签到与日常任务自动执行",
+  "dependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

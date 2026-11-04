@@ -1,0 +1,14 @@
+{
+  "quests": [
+    "daily_checkin",
+    "daily_vibehub_read",
+    "daily_explore_star",
+    "daily_agent_feed"
+  ],
+  "retries": 3,
+  "retryDelayMs": 2500,
+  "timeoutMs": 20000,
+  "webhook": "",
+  "windowMode": "app",
+  "edgeNoSandbox": true
+}
