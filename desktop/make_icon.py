@@ -1,41 +1,35 @@
-"""生成 ANS 签到桌面应用的图标（多尺寸 .ico）"""
-from PIL import Image, ImageDraw
+"""生成 ANS 签到桌面应用的图标（多尺寸 .ico）
 
-SIZE = 512
-img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-d = ImageDraw.Draw(img)
+源图：desktop/icon-source.png（方形立绘）。
+做法：居中裁成正方形 → 逐尺寸高质量缩放 → 输出多分辨率 ico。
+小尺寸（16/24/32）细节会糊，所以额外做了锐化，让它在任务栏上也能认出轮廓。
+"""
+from PIL import Image, ImageEnhance
 
-# 圆角方形渐变背景
-radius = int(SIZE * 0.22)
-grad = Image.new("RGB", (SIZE, SIZE))
-gd = ImageDraw.Draw(grad)
-c1 = (79, 70, 229)    # indigo-600
-c2 = (168, 85, 247)   # purple-500
-for y in range(SIZE):
-    t = y / (SIZE - 1)
-    gd.line(
-        [(0, y), (SIZE, y)],
-        fill=(
-            int(c1[0] + (c2[0] - c1[0]) * t),
-            int(c1[1] + (c2[1] - c1[1]) * t),
-            int(c1[2] + (c2[2] - c1[2]) * t),
-        ),
-    )
-mask = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(mask).rounded_rectangle([0, 0, SIZE - 1, SIZE - 1], radius=radius, fill=255)
-img.paste(grad, (0, 0), mask)
+SRC = "desktop/icon-source.png"
+SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-# 白色对勾
-w = int(SIZE * 0.095)
-pts = [
-    (int(SIZE * 0.26), int(SIZE * 0.53)),
-    (int(SIZE * 0.43), int(SIZE * 0.70)),
-    (int(SIZE * 0.75), int(SIZE * 0.31)),
-]
-d.line(pts, fill=(255, 255, 255, 255), width=w, joint="curve")
-for p in (pts[0], pts[2]):
-    d.ellipse([p[0] - w // 2, p[1] - w // 2, p[0] + w // 2, p[1] + w // 2], fill=(255, 255, 255, 255))
+img = Image.open(SRC).convert("RGBA")
 
-img.save("desktop/app.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-img.resize((256, 256), Image.LANCZOS).save("desktop/app-preview.png")
-print("图标已生成：desktop/app.ico")
+# 居中裁成正方形（源图本来接近方形，这里只是兜底）
+w, h = img.size
+side = min(w, h)
+left = (w - side) // 2
+top = (h - side) // 2
+img = img.crop((left, top, left + side, top + side))
+
+# 高分辨率底图，缩放时更干净
+base = img.resize((512, 512), Image.LANCZOS)
+
+frames = []
+for size in SIZES:
+    frame = base.resize((size, size), Image.LANCZOS)
+    if size <= 32:
+        # 小尺寸加一点锐度和对比，避免糊成一团
+        frame = ImageEnhance.Sharpness(frame).enhance(1.6)
+        frame = ImageEnhance.Contrast(frame).enhance(1.08)
+    frames.append(frame)
+
+frames[-1].save("desktop/app.ico", format="ICO", sizes=[(s, s) for s in SIZES])
+frames[-1].save("desktop/app-preview.png")
+print("图标已生成：desktop/app.ico", SIZES)

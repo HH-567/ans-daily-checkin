@@ -433,28 +433,20 @@ async function openBrowser(target) {
   const edge = findEdge();
   const attempts = [];
 
+  // 已经有界面窗口在跑就直接复用，不再新开一个。
+  // 反复开新窗口会让 Edge 越堆越多，内存吃满后表现就是"浏览器卡死/崩溃"。
+  if (uiPid && pidAlive(uiPid)) {
+    return [{ method: "reuse", ok: true, loaded: true, pid: uiPid }];
+  }
+
   if (!edge) {
     openLog("找不到 msedge.exe，改用 cmd start");
     attempts.push(openViaShell(target));
     return attempts;
   }
 
-  const profileDir = path.join(ROOT, "browser-profile-ui");
-  try {
-    fs.mkdirSync(profileDir, { recursive: true });
-  } catch {
-    /* 建不起来就让 Edge 自己报错 */
-  }
-
   // 窗口形态：app = 无地址栏的独立窗口（像原生应用），tab = 普通标签页
   const mode = cfg.windowMode === "tab" ? "tab" : "app";
-  const baseArgs = [
-    `--user-data-dir=${profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-sync",
-    "--window-size=1400,950",
-  ];
 
   // 上次哪种方式成功过，这次就先用哪种，避免每次都要先白屏等一圈（冷启动能从 11 秒降到 2 秒左右）
   const remembered = readUiState();
@@ -470,11 +462,21 @@ async function openBrowser(target) {
   for (const noSandbox of [...new Set(order)]) {
     if (noSandbox && !allowNoSandbox) continue;
 
-    // 换方式之前先清掉占用这个配置目录的 Edge 实例
-    if (attempts.length > 0) {
-      await killProfileEdge();
-      await sleep(1200);
+    // 两种方式各用各的配置目录：互不占锁，换方式时不需要去杀已有浏览器实例
+    const profileDir = path.join(ROOT, noSandbox ? "browser-profile-ui-ns" : "browser-profile-ui");
+    try {
+      fs.mkdirSync(profileDir, { recursive: true });
+    } catch {
+      /* 建不起来就让 Edge 自己报错 */
     }
+
+    const baseArgs = [
+      `--user-data-dir=${profileDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--window-size=1400,950",
+    ];
 
     const args = noSandbox ? [...baseArgs, "--no-sandbox", "--test-type"] : [...baseArgs];
     const label = noSandbox ? "edge-no-sandbox" : "edge";
@@ -482,13 +484,45 @@ async function openBrowser(target) {
     attempts.push(result);
 
     if (result.loaded) {
+      uiPid = result.pid;
       writeUiState({ noSandbox, at: new Date().toISOString() });
       return attempts;
     }
+
+    // 只关掉"这次刚拉起来的那个白屏实例"，绝不碰用户其他窗口
+    await closePidTree(result.pid);
+    await sleep(600);
   }
 
   attempts.push(openViaShell(target));
   return attempts;
+}
+
+function pidAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 只杀指定 pid 及其子进程，用于清理刚启动却白屏的那个窗口 */
+function closePidTree(pid) {
+  return new Promise((resolve) => {
+    if (!pid) return resolve();
+    try {
+      const p = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      p.on("exit", () => resolve());
+      p.on("error", () => resolve());
+    } catch {
+      resolve();
+    }
+  });
 }
 
 /** 记住上次成功打开界面的方式，下次直接用它 */
@@ -558,26 +592,6 @@ async function launchEdge(edge, baseArgs, label, target, mode = "app") {
   return { method: label, ok: true, loaded, pid: child.pid };
 }
 
-/** 关掉占用 browser-profile-ui 的 Edge 进程（不会碰用户日常用的浏览器） */
-function killProfileEdge() {
-  return new Promise((resolve) => {
-    const script =
-      "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | " +
-      "Where-Object { $_.CommandLine -like '*browser-profile-ui*' } | " +
-      "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
-    try {
-      const p = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      p.on("exit", () => resolve());
-      p.on("error", () => resolve());
-    } catch {
-      resolve();
-    }
-  });
-}
-
 function openViaShell(target) {
   try {
     const child = spawn("cmd.exe", ["/c", "start", "", target], {
@@ -608,6 +622,7 @@ function waitForHello(token, timeoutMs) {
 // ------------------------------------------------------------------ 运行
 
 let running = false;
+let uiPid = null;
 const helloSeen = new Map();
 
 function runCheckin(res, accountId) {
