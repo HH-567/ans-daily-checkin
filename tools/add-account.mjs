@@ -9,7 +9,7 @@
 import readline from "node:readline";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { ROOT, listAccounts } from "./lib/accounts.mjs";
+import { ROOT, listAccounts } from "../lib/accounts.mjs";
 
 function ask(question) {
   return new Promise((resolve) => {
@@ -23,7 +23,7 @@ function ask(question) {
 
 function runScript(file) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(ROOT, file)], {
+    const child = spawn(process.execPath, [path.join(ROOT, "tools", file)], {
       cwd: ROOT,
       stdio: "inherit",
     });

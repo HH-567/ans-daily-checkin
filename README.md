@@ -79,7 +79,7 @@ HTTP 500  {"error":"COMPUTE_BENEFITS_FAILED"}
 
 但页面仍然弹出「任务完成：【每日算力签到】获得 +5 积分 + 1 抓娃娃币 + 25 星豆」，并把卡片改成「✓ 已打卡领取」、连续打卡 +1 —— **服务端实际没有记账，余额没变**（前后都是 50）。也就是说站点前端是"乐观更新"，把失败也显示成成功了。
 
-![站点自身点击签到同样失败](证据-站点自身点击签到同样失败.png)
+![站点自身点击签到同样失败](docs/站点签到同样失败.png)
 
 **结论**：签到是否真的记上，不能看页面显示，只能看积分余额。
 
@@ -96,7 +96,7 @@ arcade:quest:{用户ID}:daily_vibehub_read:2026-11-04
 1. 把 `COMPUTE_BENEFITS_FAILED` 单独归类为"服务端拒绝"（退出码 `4`），不当成网络故障反复重试
 2. 计划任务默认每天 **12:00** 跑一次；时间可以在控制台的「自动任务时间」里随时增删。接口天然幂等，重复执行只会返回 `duplicate`，不会重复加分
 
-跑几天后看 `logs\` 里哪一次真正加到了积分，就能反推出真实的翻日时间，届时把 `register-task.ps1` 的时间收敛成一个即可。
+跑几天后看 `logs\` 里哪一次真正加到了积分，就能反推出真实的翻日时间，届时把 `scripts/register-task.ps1` 的时间收敛成一个即可。
 
 ---
 
@@ -117,10 +117,10 @@ arcade:quest:{用户ID}:daily_vibehub_read:2026-11-04
 **要加第二个、第三个账号，就再重复一次**（换另一个账号登录）。重复登录同一个账号是更新它的登录态，不会产生重复条目。
 
 > 命令行等价操作：
-> - `添加账号.bat` —— 菜单，可选上面三种方式
-> - `node login-password.mjs` —— 账号密码（密码输入不回显）
-> - `node import-cookie.mjs` —— 粘贴 Cookie
-> - `node grab-cookie.mjs` —— 浏览器登录
+> - `tools\添加账号.bat` —— 菜单，可选上面三种方式
+> - `node tools\login-password.mjs` —— 账号密码（密码输入不回显）
+> - `node tools\import-cookie.mjs` —— 粘贴 Cookie
+> - `node tools\grab-cookie.mjs` —— 浏览器登录
 
 
 ### 2. 试跑一次
@@ -151,19 +151,19 @@ arcade:quest:{用户ID}:daily_vibehub_read:2026-11-04
 | 退出码 | 含义 | 需要你做什么 |
 |---|---|---|
 | `0` | 成功，或今日已领过 | 无 |
-| `2` | 登录态失效 | 重新双击 `导入Cookie.bat` |
+| `2` | 登录态失效 | 重新双击 `tools\导入Cookie.bat` |
 | `3` | 网络/接口异常，已重试仍失败 | 看日志，通常过一会儿会自愈 |
 | `4` | 服务端拒绝（`COMPUTE_BENEFITS_FAILED`） | 站点侧问题，无需处理 |
 | `1` | 配置或未预期错误 | 看日志排查 |
 
 ### 3. 注册每日计划任务
 
-右键 `register-task.ps1` → **使用 PowerShell 运行**；或在 PowerShell 里：
+右键 `scripts/register-task.ps1` → **使用 PowerShell 运行**；或在 PowerShell 里：
 
 ```powershell
-.\register-task.ps1                    # 默认每天 12:00
-.\register-task.ps1 -Times 09:00       # 换成别的时间
-.\register-task.ps1 -Times 09:00,21:00 # 多个时间点
+.\scripts\register-task.ps1                    # 默认每天 12:00
+.\scripts\register-task.ps1 -Times 09:00       # 换成别的时间
+.\scripts\register-task.ps1 -Times 09:00,21:00 # 多个时间点
 ```
 
 任务以「仅在用户登录时运行」注册，**不需要输入 Windows 密码**。若当天错过了触发时间，会在下次开机或登录后尽快补跑（接口幂等，重复执行不会重复得分）。
@@ -182,10 +182,10 @@ arcade:quest:{用户ID}:daily_vibehub_read:2026-11-04
 | `node checkin.mjs --account 邮箱` | 只执行指定账号（支持 id / 邮箱 / 昵称模糊匹配） |
 | `node checkin.mjs --check` | 只检查各账号登录态和积分，不领取 |
 | `node checkin.mjs --dry-run` | 只打印将要提交的内容 |
-| `node login-password.mjs` | 用账号密码添加/刷新账号 |
-| `node import-cookie.mjs` | 粘贴 Cookie 添加/刷新账号 |
-| `node grab-cookie.mjs` | 浏览器登录添加/刷新账号 |
-| `.\register-task.ps1 -Unregister` | 删除计划任务 |
+| `node tools\login-password.mjs` | 用账号密码添加/刷新账号 |
+| `node tools\import-cookie.mjs` | 粘贴 Cookie 添加/刷新账号 |
+| `node tools\grab-cookie.mjs` | 浏览器登录添加/刷新账号 |
+| `.\scripts\register-task.ps1 -Unregister` | 删除计划任务 |
 | `Start-ScheduledTask -TaskName 'ANS每日签到'` | 立即触发一次 |
 | `Get-ScheduledTaskInfo -TaskName 'ANS每日签到'` | 查看上次执行结果 |
 
@@ -200,10 +200,10 @@ arcade:quest:{用户ID}:daily_vibehub_read:2026-11-04
 **命令行加账号**：
 
 ```powershell
-.\添加账号.bat                    # 菜单，三选一
-node login-password.mjs           # 账号密码（密码不回显）
-node import-cookie.mjs            # 粘贴 Cookie
-node grab-cookie.mjs              # 浏览器登录
+.\tools\添加账号.bat              # 菜单，三选一
+node tools\login-password.mjs      # 账号密码（密码不回显）
+node tools\import-cookie.mjs       # 粘贴 Cookie
+node tools\grab-cookie.mjs         # 浏览器登录
 ```
 
 **日常操作都在控制台里**：
@@ -212,7 +212,7 @@ node grab-cookie.mjs              # 浏览器登录
 - 每行的「执行」只跑这一个账号
 - 「停用」临时跳过某个账号（不清除登录态，随时启用回来）
 - 「删除」移除账号
-- 「+ 添加账号」等同于双击 `导入Cookie.bat`
+- 「+ 添加账号」等同于双击 `tools\导入Cookie.bat`
 
 **单个账号登录失效不会影响其他账号**：那个账号会标红「需重新登录」，其余照常执行。文件 `需要重新登录.txt` 会列出失效的账号，全部恢复后自动删除。
 
@@ -264,7 +264,7 @@ NextAuth 的会话默认约 30 天。过期后：
 - 项目目录会生成 **`需要重新登录.txt`**
 - 计划任务日志 `logs\last-run.txt` 里能看到同样的原因
 
-处理：在控制台里点「+ 添加账号」，在弹出的窗口里登录这个账号；或者双击 `导入Cookie.bat`。重新登录同一账号会自动覆盖旧凭证，提示文件也会自动清除。
+处理：在控制台里点「+ 添加账号」，在弹出的窗口里登录这个账号；或者双击 `tools\导入Cookie.bat`。重新登录同一账号会自动覆盖旧凭证，提示文件也会自动清除。
 
 也可以用命令行只补跑过期的那一个：
 
@@ -289,65 +289,58 @@ node checkin.mjs --account 过期账号的邮箱
 ## 文件说明
 
 ```
-ANS签到.exe         桌面客户端（托盘常驻 + 通知 + 拉起本地服务）
-app.mjs             本地控制台服务：多账号状态 / 流式执行 / 添加账号接口 / 导出
-ui.html             控制台界面（含「添加账号」弹层，单文件无依赖）
-checkin.mjs         主程序：遍历账号 → 校验登录态 → 领取任务 → 汇总 → 通知
-lib/accounts.mjs    账号存储（accounts/ 读写、旧版 session.json 自动迁移）
-lib/ans-auth.mjs    站点认证：账号密码登录、Cookie 校验（NextAuth credentials）
-add-account.mjs     命令行添加账号菜单（密码 / Cookie / 浏览器 三选一）
-login-password.mjs  账号密码登录（密码不回显、不落盘）
-import-cookie.mjs   粘贴 Cookie 添加账号
-grab-cookie.mjs     打开干净浏览器登录后自动抓取
-添加账号.bat         菜单入口
-导入Cookie.bat       直接粘贴 Cookie
-accounts/           每个账号一个 JSON，含 Cookie（敏感，已忽略）
-run-task.ps1        计划任务执行器（定位 node、整体重试、落盘输出）
-register-task.ps1   注册 / 删除 Windows 计划任务
-set-schedule.ps1    只改计划任务的触发时间（保留动作与设置）
-build-exe.ps1       重新编译 ANS签到.exe
-desktop/            exe 的 C# 源码与图标
-config.json         任务开关与参数
-browser-profile/    登录时使用的临时浏览器配置（用后即删，已忽略）
-browser-profile-ui/ 控制台窗口专用的浏览器配置（同样已忽略）
+app.mjs               本地控制台服务：账号状态 / 流式执行 / 导出 / 添加账号接口
+checkin.mjs           签到主程序：遍历账号 → 校验登录态 → 领取任务 → 汇总
+ui.html               控制台界面（单文件，无外部依赖）
+ANS签到.exe            桌面客户端（托盘常驻 + 通知 + 拉起本地服务）
+运行签到.bat           双击跑一次签到
+config.json           任务开关与参数（首次运行由 config.example.json 生成）
+
+tools/                添加账号
+  添加账号.bat          菜单入口，三种方式任选
+  导入Cookie.bat        直接粘贴 Cookie
+  add-account.mjs      菜单脚本
+  login-password.mjs   账号密码登录（密码不回显、不落盘）
+  import-cookie.mjs    粘贴 Cookie 添加账号
+  grab-cookie.mjs      打开干净浏览器登录后自动抓取
+
+scripts/              构建与定时
+  register-task.ps1    注册 / 删除 Windows 计划任务
+  run-task.ps1         计划任务执行器（定位 node、整体重试、落盘输出）
+  set-schedule.ps1     只改触发时间，保留动作与设置
+  build-exe.ps1        重新编译 ANS签到.exe
+
+lib/                  内部模块
+  accounts.mjs         账号存储（accounts/ 读写、旧版 session.json 自动迁移）
+  ans-auth.mjs         站点认证：账号密码登录、Cookie 校验
+
+desktop/              exe 的 C# 源码与图标
+  Launcher.cs          启动器：找 node、起服务、托盘常驻
+  MainForm.cs          主窗口
+  AddAccountForm.cs    添加账号对话框
+  app.manifest         DPI 感知清单
+  app.ico / logo-*.png / make_icon.py   图标与生成脚本
+
+docs/                 截图
+```
+
+运行时会生成这些目录（已在 `.gitignore`，不会提交）：
+
+```
+accounts/             每个账号一个 JSON，含 Cookie（敏感）
+logs/                 执行日志
+browser-profile*/     登录用的临时浏览器配置
 ```
 
 ## 修改后重新编译 exe
 
-改了 `desktop/Launcher.cs` 之后，右键 `build-exe.ps1` → 使用 PowerShell 运行，或在 PowerShell 里执行：
+改了 `desktop/Launcher.cs` 之后，右键 `scripts/build-exe.ps1` → 使用 PowerShell 运行，或在项目根目录执行：
 
 ```powershell
-.\build-exe.ps1
+.\scripts\build-exe.ps1
 ```
 
-用的是 Windows 自带的 `csc.exe`（.NET Framework 4.8），几秒出结果，产物 40 KB 左右。
-
----
-
-## 发布到 GitHub
-
-`github-upload\` 是一个**可以直接上传的干净副本**：只含源码、文档、许可证，不含任何账号凭证、日志和运行时目录，截图也已替换成演示数据。
-
-它已经初始化好 git 仓库（分支 `main`，一次初始提交）。上传步骤：
-
-```powershell
-cd github-upload
-git remote add origin https://github.com/<你的用户名>/<仓库名>.git
-git push -u origin main
-```
-
-内容清单：
-
-| 文件 | 说明 |
-|---|---|
-| `README.md` | 面向公众的说明（安装、用法、原理、FAQ） |
-| `LICENSE` | MIT |
-| `.gitignore` | 已排除凭证、日志、构建产物 |
-| `config.example.json` | 配置模板（真实的 `config.json` 不入库） |
-| `docs/` | 脱敏后的界面截图 |
-| 其余 | 全部源码 |
-
-> 更新源码后想同步到发布目录，重新复制对应文件进 `github-upload\` 再提交即可。
+用的是 Windows 自带的 `csc.exe`（.NET Framework 4.8），几秒出结果，产物约 400 KB。
 
 ---
 

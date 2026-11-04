@@ -7,13 +7,13 @@
  *
  * 每次都用全新的临时浏览器配置，所以可以连续添加多个不同账号，不会串号。
  *
- *   node grab-cookie.mjs                  # 添加账号（登录哪个就存哪个）
- *   node grab-cookie.mjs --timeout 600    # 自定义等待登录秒数（默认 900）
- *   node grab-cookie.mjs --headless       # 无界面（仅调试用）
+ *   node tools\grab-cookie.mjs                  # 添加账号（登录哪个就存哪个）
+ *   node tools\grab-cookie.mjs --timeout 600    # 自定义等待登录秒数（默认 900）
+ *   node tools\grab-cookie.mjs --headless       # 无界面（仅调试用）
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, saveAccount, listAccounts, migrateLegacy } from "./lib/accounts.mjs";
+import { ROOT, saveAccount, listAccounts, migrateLegacy } from "../lib/accounts.mjs";
 
 const ORIGIN = "https://ans.cauai.fun";
 const TARGET = `${ORIGIN}/workspace/benefits`;
@@ -68,7 +68,7 @@ async function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(`
-用法：node grab-cookie.mjs [--timeout 秒] [--headless]
+用法：node tools\grab-cookie.mjs [--timeout 秒] [--headless]
 
   （无参数）        弹出干净浏览器窗口，登录成功后自动保存为账号并关闭
   --timeout 900     最长等待秒数，默认 900（15 分钟）
@@ -121,7 +121,7 @@ async function main() {
     console.error("  请确认本机安装了 Microsoft Edge。若确实没有，可用备用方案：");
     console.error("    1) 浏览器登录 " + TARGET);
     console.error("    2) F12 → Network → 复制任意 api 请求为 cURL");
-    console.error("    3) 执行 node import-cookie.mjs 并粘贴");
+    console.error("    3) 执行 node tools\import-cookie.mjs 并粘贴");
     cleanupProfile(profileDir);
     return 1;
   }
@@ -176,7 +176,7 @@ async function main() {
   if (!loggedIn) {
     console.error("");
     console.error("✕ 未检测到登录状态，没有保存。");
-    console.error("  请在浏览器窗口里完成登录后重试；或改用 node import-cookie.mjs 手动粘贴。");
+    console.error("  请在浏览器窗口里完成登录后重试；或改用 node tools\import-cookie.mjs 手动粘贴。");
     await ctx.close().catch(() => {});
     cleanupProfile(profileDir);
     return 2;

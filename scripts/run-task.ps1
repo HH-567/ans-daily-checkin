@@ -10,7 +10,7 @@ try {
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch { }
 
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $logDir = Join-Path $root 'logs'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 

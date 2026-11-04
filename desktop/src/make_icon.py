@@ -1,6 +1,6 @@
 """生成 ANS 签到桌面应用的图标（多尺寸 .ico）
 
-源图：desktop/icon-source.png（方形立绘，带文字）。
+源图：desktop/assets/icon-source.png（方形立绘，带文字）。
 
 两个关键点：
 1. 同一构图在 16~32px 会糊成一团，所以按尺寸用不同裁切（小尺寸取脸部特写）。
@@ -10,7 +10,7 @@
 import struct
 from PIL import Image, ImageEnhance
 
-SRC = "desktop/icon-source.png"
+SRC = "desktop/assets/icon-source.png"
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 # 每种尺寸的取景比例（1.0 = 完整画面，越小越贴近脸部）
@@ -127,13 +127,13 @@ for size in SIZES:
         frame = ImageEnhance.Sharpness(frame).enhance(1.2)
     frames.append((size, frame))
 
-write_ico("desktop/app.ico", frames)
-frames[-1][1].save("desktop/app-preview.png")
+write_ico("desktop/assets/app.ico", frames)
+frames[-1][1].save("desktop/assets/app-preview.png")
 
 # 界面内使用的 logo（走 base64 内联，尺寸越小越好）
-base.resize((256, 256), Image.LANCZOS).save("desktop/logo-256.png", optimize=True)
-base.resize((128, 128), Image.LANCZOS).save("desktop/logo-128.png", optimize=True)
-zoom_center(base, 0.56, 0.60).resize((64, 64), Image.LANCZOS).save("desktop/logo-64.png", optimize=True)
-zoom_center(base, 0.56, 0.60).resize((32, 32), Image.LANCZOS).save("desktop/logo-32.png", optimize=True)
+base.resize((256, 256), Image.LANCZOS).save("desktop/assets/logo-256.png", optimize=True)
+base.resize((128, 128), Image.LANCZOS).save("desktop/assets/logo-128.png", optimize=True)
+zoom_center(base, 0.56, 0.60).resize((64, 64), Image.LANCZOS).save("desktop/assets/logo-64.png", optimize=True)
+zoom_center(base, 0.56, 0.60).resize((32, 32), Image.LANCZOS).save("desktop/assets/logo-32.png", optimize=True)
 
-print("图标已生成：desktop/app.ico", SIZES)
+print("图标已生成：desktop/assets/app.ico", SIZES)

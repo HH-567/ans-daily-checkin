@@ -457,7 +457,7 @@ async function main() {
   logLine(`=== ANS 每日签到 · ${shanghaiDate()} · ${accounts.length} 个账号 ===`);
 
   if (accounts.length === 0) {
-    logLine("✕ 还没有添加账号。双击 导入Cookie.bat，或在控制台点「添加账号」。");
+    logLine("✕ 还没有添加账号。双击 tools\\导入Cookie.bat，或在控制台点「添加账号」。");
     writeAuthMarker([]);
     logEvent({ ok: false, reason: "no-account" });
     return 2;
